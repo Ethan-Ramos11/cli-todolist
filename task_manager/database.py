@@ -122,3 +122,69 @@ def add_task(task):
     return task_id
 
 
+def get_tasks(
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    category: Optional[str] = None,
+    tag: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 100,
+) -> List[Dict]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    query = ("""
+    SELECT 
+             t.id, t.title, t.description, t.due_date, t.created_at, 
+             t.updated_at, t.status, t.priority, 
+             c.name as category, c.color as category_color
+    FROM tasks t
+    LEFT JOIN categories c on t.catogory_id = c.id
+    """)
+
+    params = []
+    where_clauses = []
+
+    if tag:
+        query += """
+    JOIN task_tags tt on t.id = tt.task_id
+    JOIN tags tg ON tt.tag_id = tg.id
+    """
+
+    if status:
+        where_clauses.append("t.status = ?")
+        params.append(status)
+
+    if priority:
+        where_clauses.append("t.priority = ?")
+        params.append(priority)
+
+    if category:
+        where_clauses.append("c.name = ?")
+        params.append(category)
+
+    if search:
+        where_clauses.append("(t.title LIKE ? OR t.description LIKE ?)")
+        search_term = f"%{search}%"
+        params.extend([search_term, search_term])
+
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+
+    query += " ORDER BY t.due_date ASC, t.priority DESC, t.id DESC LIMIT ?"
+    params.append(limit)
+    cursor.execute(query, params)
+    tasks = [dict(row) for row in cursor.fetchall()]
+
+    for task in tasks:
+        cursor.execute("""
+                       SELECT tg.name 
+                       FROM tags tg 
+                       JOIN task_tags tt ON tg.id = tt.tag_id
+                       WHERE tt.task_id = ?
+    """, ([task['id']],))
+        task['tags'] = [row['name'] for row in cursor.fetchall()]
+    conn.close()
+    return tasks
+
+
