@@ -77,4 +77,48 @@ def init_db():
         "[bold green]Database initialized successfully![/bold green]")
 
 
+def add_task(task):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    category_id = None
+    if task.category:
+        cursor.execute(
+            "SELECT id FROM categories WHERE name = ?" (task.category,))
+        result = cursor.fetchone()
+        if result:
+            category_id = result['id']
+        else:
+            cursor.execute(
+                "INSERT INTO categories (name) VALUES (?)", (task.category))
+            category_id = cursor.lastrowid
+    cursor.execute("""
+    INSERT INTO tasks (
+                   title, description, due_date, status, priority, category_id
+                   ) VALUES (?,?,?,?,?,?)
+    """, (
+        task.title,
+        task.description,
+        task.due_date.isoformat() if task.due_date else None,
+        task.status,
+        task.priority,
+        category_id
+    ))
+    task_id = cursor.lastrowid
+
+    if task.tags:
+        for tag in task.tags:
+            cursor.execute(
+                "INSERT INTO tags (name) VALUES (?) ON CONFLICT(name) DO NOTHING", (tag,))
+
+            cursor.execute("SELECT id FROM tags WHERE name = ?", (tag,))
+            tag_id = cursor.fetchone()['id']
+
+            cursor.execute(
+                "INSERT INTO task_tags (task_id, tag_id) VALUES (?,?)", (task_id, tag_id))
+    conn.commit()
+    conn.close()
+
+    return task_id
+
 
