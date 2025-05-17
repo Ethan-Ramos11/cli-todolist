@@ -232,3 +232,55 @@ def delete_task(task_id):
     return True
 
 
+def update_tasks(task_id, task_data):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT if FROM TASKS WHERE id = ?", (task_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return False
+
+    if "category" in task_data:
+        category_name = task_data.pop("category", None)
+        if category_name:
+            cursor.execute(
+                "SELECT if FROM categories WHERE name = ?", (category_name,))
+            result = cursor.fetchone()
+            if result:
+                task_data["category_id"] = result["id"]
+            else:
+                cursor.execute(
+                    "INSERT INTO categories (name) VALUES (?)", (category_name,))
+                task_data["category_id"] = cursor.lastrowid
+    else:
+        task_data['category_id'] = None
+
+    tags = task_data.pop('tags', None)
+    if "due_date" in task_data and isinstance(task_data['due_date'], datetime):
+        task_data['due_date'] = task_data['due_date'].isoformat()
+
+    if task_data:
+        task_data["updated_at"] = datetime.now().isoformat()
+
+        placeholders = ", ".join([f"field = ?" for field in task_data.keys()])
+        values = list(task_data.values())
+        values.append(task_id)
+        cursor.execute(
+            f"UPDATE tasks SET {placeholders} WHERE id = ?", values)
+
+    if tags is not None:
+        cursor.execute("DELETE FROM task_tags WHERE task_id = ?" (task_id,))
+
+        for tag_name in tags:
+            cursor.execute(
+                "INSERT INTO tags (name) VALUES (?) ON CONFLICT(name) DO NOTHING", (tag_name,)
+            )
+            cursor.execute("SELECT id FROM tags WHERE name = ?", (tag_name,))
+            tag_id = cursor.fetchone()["id"]
+            cursor.execute(
+                "INSERT INTO task_tags (task_id, tag_id) VALUES (?, ?)",
+                (task_id, tag_id))
+    conn.execute()
+    conn.close()
+    return True
