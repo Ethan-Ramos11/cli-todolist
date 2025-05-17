@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union, Any
 
 from rich.console import Console
-from tqdm import tqdm
 
 from task_manager import config
 from task_manager.models import Task
