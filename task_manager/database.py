@@ -188,3 +188,32 @@ def get_tasks(
     return tasks
 
 
+def get_task(task_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+                SELECT 
+                    t.id, t.title, t.description, t.due_date, t.status, t.priority
+                    c.name as category, c.color as category_color
+                    FROM tasks t
+                    LEFT JOIN categories c ON t.category_id = c.id
+                    WHERE t.id = ?
+    """, (task_id, ))
+    task = cursor.fetchone()
+    if not task:
+        conn.close()
+        return None
+
+    task_dict = dict(task)
+    cursor.execute("""
+    SELECT tg.name
+    FROM tags tg 
+    JOIN task_tags tt ON tg.id = tt.tag_id
+    WHERE tt.task_id = ?
+    """, (task_id,))
+    task_dict['tags'] = [row['name'] for row in cursor.fetchall()]
+
+    conn.close()
+    return task_dict
+
+
