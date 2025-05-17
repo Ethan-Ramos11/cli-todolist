@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 from rich.console import Console
 from tqdm import tqdm
@@ -12,14 +12,31 @@ from task_manager.models import Task
 console = Console()
 
 
-def get_db_connection():
+def get_db_connection() -> sqlite3.Connection:
+    """Creates and returns a database connection with proper configuration.
+
+    Returns:
+        sqlite3.Connection: A configured SQLite database connection with:
+            - Foreign key constraints enabled
+            - Row factory set to sqlite3.Row
+    """
     conn = sqlite3.connect(config.DB_FULL_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def init_db():
+def init_db() -> None:
+    """Initializes the database with required tables and default categories.
+
+    Creates the following tables if they don't exist:
+        - categories: Stores task categories with colors
+        - tasks: Main tasks table with foreign key to categories
+        - tags: Stores available tags
+        - task_tags: Junction table for many-to-many relationship between tasks and tags
+
+    Also populates default categories with predefined colors.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -77,7 +94,22 @@ def init_db():
         "[bold green]Database initialized successfully![/bold green]")
 
 
-def add_task(task):
+def add_task(task: Task) -> int:
+    """Adds a new task to the database.
+
+    Args:
+        task (Task): Task object containing task details including:
+            - title
+            - description
+            - due_date
+            - status
+            - priority
+            - category
+            - tags
+
+    Returns:
+        int: The ID of the newly created task
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -129,7 +161,31 @@ def get_tasks(
     tag: Optional[str] = None,
     search: Optional[str] = None,
     limit: int = 100,
-) -> List[Dict]:
+) -> List[Dict[str, Any]]:
+    """Retrieves tasks with optional filtering.
+
+    Args:
+        status (Optional[str]): Filter tasks by status (e.g., 'pending', 'completed')
+        priority (Optional[str]): Filter tasks by priority (e.g., 'high', 'medium', 'low')
+        category (Optional[str]): Filter tasks by category name
+        tag (Optional[str]): Filter tasks by tag name
+        search (Optional[str]): Search term to match in title or description
+        limit (int, optional): Maximum number of tasks to return. Defaults to 100.
+
+    Returns:
+        List[Dict[str, Any]]: List of task dictionaries containing:
+            - id: Task ID
+            - title: Task title
+            - description: Task description
+            - due_date: Task due date
+            - created_at: Creation timestamp
+            - updated_at: Last update timestamp
+            - status: Task status
+            - priority: Task priority
+            - category: Category name
+            - category_color: Category color
+            - tags: List of associated tags
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -139,7 +195,7 @@ def get_tasks(
              t.updated_at, t.status, t.priority, 
              c.name as category, c.color as category_color
     FROM tasks t
-    LEFT JOIN categories c on t.catogory_id = c.id
+    LEFT JOIN categories c on t.category_id = c.id
     """)
 
     params = []
@@ -188,12 +244,29 @@ def get_tasks(
     return tasks
 
 
-def get_task(task_id):
+def get_task(task_id: int) -> Optional[Dict[str, Any]]:
+    """Retrieves a single task by its ID.
+
+    Args:
+        task_id (int): The ID of the task to retrieve
+
+    Returns:
+        Optional[Dict[str, Any]]: Task dictionary if found, None otherwise. Contains:
+            - id: Task ID
+            - title: Task title
+            - description: Task description
+            - due_date: Task due date
+            - status: Task status
+            - priority: Task priority
+            - category: Category name
+            - category_color: Category color
+            - tags: List of associated tags
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
                 SELECT 
-                    t.id, t.title, t.description, t.due_date, t.status, t.priority
+                    t.id, t.title, t.description, t.due_date, t.status, t.priority,
                     c.name as category, c.color as category_color
                     FROM tasks t
                     LEFT JOIN categories c ON t.category_id = c.id
@@ -217,10 +290,18 @@ def get_task(task_id):
     return task_dict
 
 
-def delete_task(task_id):
+def delete_task(task_id: int) -> bool:
+    """Deletes a task from the database.
+
+    Args:
+        task_id (int): The ID of the task to delete
+
+    Returns:
+        bool: True if task was deleted, False if task not found
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM tasks WHERE tasks.id = ?", (task_id,))
+    cursor.execute("SELECT id FROM tasks WHERE id = ?", (task_id,))
     if not cursor.fetchone():
         conn.close()
         return False
@@ -232,7 +313,28 @@ def delete_task(task_id):
     return True
 
 
-def update_tasks(task_id, task_data):
+def update_tasks(task_id: int, task_data: Dict[str, Any]) -> bool:
+    """Updates an existing task with new data.
+
+    Args:
+        task_id (int): The ID of the task to update
+        task_data (Dict[str, Any]): Dictionary containing fields to update:
+            - title: New task title
+            - description: New task description
+            - due_date: New due date
+            - status: New status
+            - priority: New priority
+            - category: New category name
+            - tags: New list of tags
+
+    Returns:
+        bool: True if task was updated, False if task not found
+
+    Note:
+        - If category doesn't exist, it will be created
+        - Existing tags will be removed and replaced with new tags
+        - updated_at timestamp is automatically set to current time
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -270,7 +372,7 @@ def update_tasks(task_id, task_data):
             f"UPDATE tasks SET {placeholders} WHERE id = ?", values)
 
     if tags is not None:
-        cursor.execute("DELETE FROM task_tags WHERE task_id = ?" (task_id,))
+        cursor.execute("DELETE FROM task_tags WHERE task_id = ?", (task_id,))
 
         for tag_name in tags:
             cursor.execute(
@@ -281,6 +383,6 @@ def update_tasks(task_id, task_data):
             cursor.execute(
                 "INSERT INTO task_tags (task_id, tag_id) VALUES (?, ?)",
                 (task_id, tag_id))
-    conn.execute()
+    conn.commit()
     conn.close()
     return True
