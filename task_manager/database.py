@@ -217,3 +217,18 @@ def get_task(task_id):
     return task_dict
 
 
+def delete_task(task_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM tasks WHERE tasks.id = ?", (task_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return False
+
+    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+
+    conn.commit()
+    conn.close()
+    return True
+
+
